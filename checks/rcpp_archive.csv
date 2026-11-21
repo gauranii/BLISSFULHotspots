@@ -1,0 +1,8 @@
+output,mode,source,files,values,not_identical,max_abs_diff,verdict,r_seconds,rcpp_seconds,cores,problems
+table1,archive,archived runs,1,420,0,0,identical,0.2,0.3,2,
+table2,archive,archived runs,1,375,0,0,identical,0.2,0.3,2,
+table3,archive,computed (seeded chains),1,36,0,0,identical,54.4,4.5,2,
+fig1,archive,computed,7,1524,0,0,identical,0.2,0.3,2,
+figS1,archive,archived runs,5,1848,0,0,identical,0.9,1.0,2,
+figS2,archive,computed (seeded data),10,3245,0,0,identical,0.2,0.3,2,
+figS3,archive,archived runs,2,1480,0,0,identical,0.6,0.7,2,

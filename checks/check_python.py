@@ -7,7 +7,10 @@
 #          results/ (tables, plotted values, stored replications) and the
 #          marks of every figure (bars, lines, tiles; figure_compare.py).
 # Usage:   python3 checks/check_python.py archive|rerun <R output dir>
-#          <Python output dir> <comparison csv> [replications]
+#          <Python output dir> <comparison csv> [replications] [name]
+#          name: the second implementation, "python" by default;
+#          checks/check_rcpp.sh passes "rcpp" and the outputs of the Rcpp
+#          scripts, which are compared with R in the same way.
 # Inputs:  <dir>/results/, <dir>/figures/, <dir>/logs/<script>.done (time and
 #          cores) of both implementations, written by checks/check_python.sh.
 # Outputs: the comparison csv, one row per output of the paper: files, cells
@@ -32,6 +35,8 @@ from figure_compare import (COLOUR_TOLERANCE, POSITION_TOLERANCE, compare_bars, 
 
 mode, r_dir, py_dir, out_file = sys.argv[1:5]
 replications = sys.argv[5] if len(sys.argv) > 5 else "2"
+other = sys.argv[6] if len(sys.argv) > 6 else "python"  # the second implementation
+DRAWN_BY = "matplotlib" if other == "python" else "r"   # what drew its figures
 
 # Script, csv patterns (under results/), figure patterns (under figures/),
 # how the marks of the figures are compared, and where the output comes from.
@@ -114,8 +119,8 @@ class Comparison:
     def figure(self, r_file, py_file, name, kind):
         """The marks of a figure correspond and agree within the tolerance."""
         compare = {"bars": compare_bars, "tiles": compare_tiles,
-                   "lines": lambda a, b: compare_lines(a, b, VERTICES)}[kind]
-        in_r, in_py, compared, difference = compare(r_file, py_file)
+                   "lines": lambda a, b, drawn_by: compare_lines(a, b, VERTICES, drawn_by)}[kind]
+        in_r, in_py, compared, difference = compare(r_file, py_file, drawn_by=DRAWN_BY)
         self.files += 1
         self.values += compared
         tolerance = COLOUR_TOLERANCE if kind == "tiles" else POSITION_TOLERANCE
@@ -157,7 +162,7 @@ for output, (script, tables, figures, kind, source) in OUTPUTS.items():
     rows.append({"output": output, "mode": mode, "source": source, "files": total.files,
                  "values": total.values, "not_identical": total.unequal,
                  "max_abs_diff": f"{total.max_abs:.3g}", "verdict": verdict,
-                 "r_seconds": r_time[0], "python_seconds": py_time[0], "cores": r_time[1],
+                 "r_seconds": r_time[0], f"{other}_seconds": py_time[0], "cores": r_time[1],
                  "problems": "; ".join(sorted(set(total.problems))[:5])})
     print(f"{output:7} {mode:8} files {total.files:4d} values {total.values:6d} "
           f"not identical {total.unequal:5d}  {verdict}")

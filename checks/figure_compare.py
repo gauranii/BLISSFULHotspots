@@ -14,7 +14,8 @@
 # Usage:   from figure_compare import compare_bars, compare_lines, compare_tiles
 #          Each returns (marks in the R file, marks in the Python file,
 #          numbers compared, largest difference or None when the marks do not
-#          correspond).
+#          correspond). With drawn_by="r" the second file is an R figure too
+#          (the Rcpp version draws with R) and is read as the first.
 # -----------------------------------------------------------------------------
 import re
 
@@ -93,6 +94,17 @@ def matplotlib_polylines(path, vertices):
             if paint == "S" and not closed and len(points) == vertices]
 
 
+def rectangles(path, drawn_by):
+    """Filled and stroked rectangles of the second figure of a comparison,
+    drawn by "matplotlib" or by "r"."""
+    return r_rectangles(path) if drawn_by == "r" else matplotlib_rectangles(path)
+
+
+def polylines(path, vertices, drawn_by):
+    """Stroked lines of the second figure of a comparison."""
+    return r_polylines(path, vertices) if drawn_by == "r" else matplotlib_polylines(path, vertices)
+
+
 def fit(u, v, through_origin=False):
     """Largest |a + b u - v| of the least squares line from u to v."""
     n = len(u)
@@ -107,10 +119,10 @@ def colour_difference(a, b):
     return max(abs(x - y) for x, y in zip(a, b))
 
 
-def compare_bars(r_pdf, py_pdf):
+def compare_bars(r_pdf, py_pdf, drawn_by="matplotlib"):
     """Bars of a bar plot: same number, same fill bar by bar, heights
     proportional and left ends on one line (to POSITION_TOLERANCE)."""
-    r, py = r_rectangles(r_pdf), matplotlib_rectangles(py_pdf)
+    r, py = r_rectangles(r_pdf), rectangles(py_pdf, drawn_by)
     if len(r) != len(py) or not r:
         return len(r), len(py), 0, None
     if max(colour_difference(a[4], b[4]) for a, b in zip(r, py)) > COLOUR_TOLERANCE:
@@ -120,9 +132,9 @@ def compare_bars(r_pdf, py_pdf):
     return len(r), len(py), 3 * len(r), max(heights, lefts)
 
 
-def compare_lines(r_pdf, py_pdf, vertices):
+def compare_lines(r_pdf, py_pdf, vertices, drawn_by="matplotlib"):
     """Lines of a line plot: same number, every vertex after one map per axis."""
-    r, py = r_polylines(r_pdf, vertices), matplotlib_polylines(py_pdf, vertices)
+    r, py = r_polylines(r_pdf, vertices), polylines(py_pdf, vertices, drawn_by)
     if len(r) != len(py) or not r:
         return len(r), len(py), 0, None
     r_points = [p for line in r for p in line]
@@ -140,10 +152,10 @@ def _tiles(rectangles):
     return sorted(tiles, key=lambda r: (-round(r[1], 1), r[0]))
 
 
-def compare_tiles(r_pdf, py_pdf):
+def compare_tiles(r_pdf, py_pdf, drawn_by="matplotlib"):
     """Tiles of a shaded table: same number, same fill tile by tile; the
     difference returned is that of the colour channels."""
-    r, py = _tiles(r_rectangles(r_pdf)), _tiles(matplotlib_rectangles(py_pdf))
+    r, py = _tiles(r_rectangles(r_pdf)), _tiles(rectangles(py_pdf, drawn_by))
     if len(r) != len(py) or not r:
         return len(r), len(py), 0, None
     return len(r), len(py), 3 * len(r), max(colour_difference(a[4], b[4]) for a, b in zip(r, py))

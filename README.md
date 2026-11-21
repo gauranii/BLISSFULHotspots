@@ -24,6 +24,8 @@ The code exists twice, in R (`R/`, `scripts/`) and in Python (`python/`).
 The Python version is a second implementation that gives the same numbers as
 R: the same random draws, the same Gibbs chains, every csv cell equal and
 every figure equal mark by mark (`checks/PYTHON.md`). R is the reference.
+A third version, `rcpp/`, is the R code with its sampler written in C++ (see
+Rcpp version); it gives the same numbers as R too (`checks/RCPP.md`).
 
 ```r
 source("R/setup.R")
@@ -48,12 +50,15 @@ eb_rejections(x, level = 0.05)                      # the empirical Bayes count
 | `scripts/` | One script per table or figure |
 | `python/localfdr/` | The Python version of `R/`, one module per R file, with `rng.py` (R's random number generators), `rmath.py` and `rbase.py` (R's arithmetic, and BLAS and LAPACK through R's own library) |
 | `python/scripts/` | The Python version of each script, same options and output files |
-| `tests/`, `python/tests/` | Unit tests of every R function (testthat) and every Python function (pytest) |
+| `rcpp/src/` | The C++ version of `R/distributions.R`, of the Gibbs sampler of `R/bayes_fdr.R` and of `rmixture()`, one file per R file, with `distributions_core.h` (the code the files share) and `rbase.h` (R's arithmetic, and BLAS and LAPACK called as R calls them) |
+| `rcpp/R/load.R` | Loader of the Rcpp version: compiles `rcpp/src/` and puts each C++ function in place of the R function of the same name |
+| `rcpp/scripts/` | The Rcpp version of each script: the R script run on the C++ functions, same options and output files |
+| `tests/`, `python/tests/`, `rcpp/tests/` | Unit tests of every R function (testthat), every Python function (pytest) and every C++ function (testthat, against its R function) |
 | `archive/` | Summaries of the original simulation runs that the scripts read (`simulation_summaries.csv`), the tables behind the published Figures S1 and S3 (`figS1_plot_input.csv`, `figS3_full_format.csv`), the published figure files (`figures/`, named as the figures the scripts draw), and `reduce_archive.R`, which made all of these from the run folders |
 | `data/domains/` | Mutation counts of the six protein domains |
-| `checks/` | The numbers printed in the paper (`paper_values.csv`), the comparison scripts and their result (`RESULTS.md`), `check_equivalence.R`, which compares the functions of `R/` with the original code, and `versions.sh`, which prints the software versions; `check_python.sh`, which runs every R and Python script and compares their outputs (`PYTHON.md`) |
+| `checks/` | The numbers printed in the paper (`paper_values.csv`), the comparison scripts and their result (`RESULTS.md`), `check_equivalence.R`, which compares the functions of `R/` with the original code, and `versions.sh`, which prints the software versions; `check_python.sh`, which runs every R and Python script and compares their outputs (`PYTHON.md`); `check_rcpp.sh`, which does the same for the R and Rcpp scripts (`RCPP.md`) |
 | `.github/workflows/ci.yml` | Runs `nix flake check` on every push and pull request |
-| `flake.nix`, `flake.lock` | Pinned environment (R and Python with their packages), one command per output in each language, the unit tests and the checks |
+| `flake.nix`, `flake.lock` | Pinned environment (R and Python with their packages, Rcpp and a C++ compiler), one command per output in each version, the unit tests and the checks |
 
 ## Running
 
@@ -62,9 +67,10 @@ With [Nix](https://nixos.org) (flakes enabled), from the repository root:
 ```sh
 nix run .#table3        # one output: table1 to table3, fig1, figS1 to figS3
 nix run .#all           # every output
-nix flake check         # build everything, compare with the paper and R with Python, run the tests
+nix flake check         # build everything, compare with the paper and R with Python and Rcpp, run the tests
 nix run .#py-table3     # the same output from the Python code (py-all for every one)
-nix run .#test          # unit tests of the R and the Python code
+nix run .#rcpp-table3   # the same output from the Rcpp code (rcpp-all for every one)
+nix run .#test          # unit tests of the R, the Rcpp and the Python code
 nix run .#versions      # print the software versions
 nix run .#help          # every command (also: nix run . -- --help)
 ```
@@ -138,6 +144,48 @@ analysis of Table 3 uses the sampler version of 2018 (`SAMPLER_VERSIONS` in
 and the functions of `R/` on the same cases and compares their results. On a
 different machine or R build, recomputed results can differ.
 
+## Rcpp version
+
+`rcpp/` is the R code with the parts that take the time written in C++
+(Rcpp). `rcpp/src/` holds the functions of `R/distributions.R` (the ZIGP
+density and draws, the shifted densities, the Dirichlet and multinomial
+samplers), the whole Gibbs sampler of `R/bayes_fdr.R` (`bayes_local_fdr()`
+and every function it calls, for the four alternatives and the three versions
+of the sampler) and `rmixture()` of `R/simulate.R`. Each C++ function has the
+name and the arguments of its R function. `rcpp/R/load.R` compiles them and
+puts them in place of the R functions, so everything else runs as before and
+calls C++: the scripts in `rcpp/scripts/` run the scripts of `scripts/` this
+way, with the same options and output files.
+
+```r
+source("R/setup.R")
+source("rcpp/R/load.R")     # compiles rcpp/src/ on the first call
+x <- read_domain("cd00083", PATHS$domains)$counts
+set.seed(1234)
+fit <- bayes_local_fdr(x, model = "NP", gamma = 1)   # the chain of the R code, run in C++
+```
+
+What stays in R: the empirical Bayes methods (`R/eb_fdr.R`), the settings
+(`sampler_settings()`, `SAMPLER_VERSIONS`), the reader of the domain files,
+the driver of the simulation studies, the tables and the plots. Inside a
+chain two things are still asked of R: the covariance matrix of the chain
+behind the adapted proposal (`var()`, once every 100 iterations) and the two
+small functions stored in a sampler version.
+
+The outputs equal those of R in every value (`checks/RCPP.md`): the C++ code
+draws from R's random number generator in the order of the R code, calls R's
+own mathematical functions and the BLAS and LAPACK library R is linked to,
+and adds its sums as R does. `rcpp/tests/` holds the unit tests: every C++
+function against its R function under fixed seeds, with identical values and
+the same state of the random number generator afterwards, up to whole seeded
+chains.
+
+Run times, 2 cores: Table 3 takes 54 s in R and 5 s with Rcpp; two
+replications of every setting take 100 s and 10 s for Table 1 and 119 s and
+7 s for Table 2. Compiling the C++ files takes about 8 s, once; the
+compiled files are kept in the temporary folder of the machine (or in the
+folder named by `LOCALFDR_RCPP_CACHE`).
+
 ## Tests
 
 Every function in `R/` has a unit test (`tests/testthat/test-<file>.R`, 68
@@ -146,8 +194,10 @@ functions) and every function of `python/localfdr/` has one
 density that sums to one, a sampler's mean over many draws, a short chain that
 gives the same draws twice under one seed. The Python tests marked `against_r`
 also compare random streams, densities and whole Gibbs chains with R, draw by
-draw. `nix run .#test` runs both suites; `nix flake check` runs them with the
-output checks, and GitHub runs `nix flake check` on every push.
+draw. The tests of the Rcpp version (`rcpp/tests/testthat/test-rcpp.R`)
+compare each of the 22 C++ functions with its R function. `nix run .#test`
+runs the three suites; `nix flake check` runs them with the output checks,
+and GitHub runs `nix flake check` on every push.
 
 Each simulated data set and each chain is seeded where it is drawn (seed plus
 replication number in the simulation studies, 1234 for each domain and model

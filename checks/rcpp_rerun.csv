@@ -1,0 +1,3 @@
+output,mode,source,files,values,not_identical,max_abs_diff,verdict,r_seconds,rcpp_seconds,cores,problems
+table1,rerun,2 replications,81,940,0,0,identical,100.2,9.9,2,
+table2,rerun,2 replications,101,875,0,0,identical,119.2,6.6,2,

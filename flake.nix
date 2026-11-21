@@ -17,7 +17,8 @@
 
       # R with the packages the scripts load: ggplot2 draws Figures S1 and S3,
       # openxlsx reads the output files of the original runs
-      # (archive/reduce_archive.R), testthat runs the unit tests.
+      # (archive/reduce_archive.R), testthat runs the unit tests, Rcpp
+      # compiles the C++ files of rcpp/src/.
       rEnv =
         pkgs:
         pkgs.rWrapper.override {
@@ -25,6 +26,7 @@
             ggplot2
             openxlsx
             testthat
+            Rcpp
           ];
         };
 
@@ -101,15 +103,40 @@
         meta.description = "Build ${name} of the paper with the Python scripts";
       };
 
-      # The unit tests: testthat over tests/testthat/ and pytest over
-      # python/tests/, started in the current directory. The Python tests
-      # marked against_r run R and compare with it, so R is on the PATH too.
+      # The same commands with the Rcpp scripts, as rcpp-<name>. The C++
+      # files are compiled on the first run (R calls the compiler it was
+      # built with, through make) and kept in the temporary folder of the
+      # machine, or in LOCALFDR_RCPP_CACHE.
+      compilerPath = pkgs: "${pkgs.gnumake}/bin:${pkgs.stdenv.cc}/bin";
+      rcppRunner =
+        pkgs: name: names:
+        pkgs.writeShellScript "localfdr-rcpp-${name}" ''
+          set -euo pipefail
+          export LOCALFDR_OUTPUT="''${LOCALFDR_OUTPUT:-$PWD}"
+          export OPENBLAS_NUM_THREADS=1
+          export PATH=${compilerPath pkgs}:$PATH
+          cd ${self}
+          for script in ${lib.concatStringsSep " " names}; do
+            ${rEnv pkgs}/bin/Rscript "rcpp/scripts/$script.R" "$@"
+          done
+        '';
+      rcppApp = pkgs: name: names: {
+        type = "app";
+        program = "${rcppRunner pkgs name names}";
+        meta.description = "Build ${name} of the paper with the Rcpp scripts";
+      };
+
+      # The unit tests: testthat over tests/testthat/ and rcpp/tests/testthat/
+      # and pytest over python/tests/, started in the current directory. The
+      # Python tests marked against_r run R and compare with it, so R is on
+      # the PATH too.
       unitTests = pkgs: ''
         export OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
         export LOCALFDR_BLAS=${blasLibrary pkgs}
         export PYTHONDONTWRITEBYTECODE=1
-        export PATH=${rEnv pkgs}/bin:${pyEnv pkgs}/bin:$PATH
+        export PATH=${rEnv pkgs}/bin:${pyEnv pkgs}/bin:${compilerPath pkgs}:$PATH
         unit_r() { Rscript tests/testthat.R; }
+        unit_rcpp() { Rscript rcpp/tests/testthat.R; }
         unit_python() { python -m pytest -p no:cacheprovider python/tests "$@"; }
       '';
 
@@ -121,6 +148,9 @@
             "  nix run .#${command}${lib.fixedWidthString (12 - builtins.stringLength command) " " ""}${text}";
           rows = lib.mapAttrsToList (name: script: row name "scripts/${script}.R") scripts;
           pyRows = lib.mapAttrsToList (name: script: row "py-${name}" "python/scripts/${script}.py") scripts;
+          rcppRows = lib.mapAttrsToList (
+            name: script: row "rcpp-${name}" "rcpp/scripts/${script}.R"
+          ) scripts;
         in
         lib.concatStringsSep "\n" (
           [
@@ -138,11 +168,17 @@
           ++ [
             (row "py-all" "every table and figure")
             ""
+            "The same outputs with the Rcpp scripts (the sampler in C++):"
+          ]
+          ++ rcppRows
+          ++ [
+            (row "rcpp-all" "every table and figure")
+            ""
             "Other commands:"
-            (row "test" "unit tests of R/ and python/localfdr/ in the current directory")
+            (row "test" "unit tests of R/, rcpp/src/ and python/localfdr/ in the current directory")
             (row "versions" "print the software versions")
             (row "help" "print this list (also: nix run . -- --help)")
-            "  nix flake check       build every output, compare it with the paper and R with Python, run the unit tests"
+            "  nix flake check       build every output, compare it with the paper and R with Python and Rcpp, run the unit tests"
             "  nix develop           a shell with the same R and Python"
             ""
             "Results are written to results/ and figures/ of the current directory (or of LOCALFDR_OUTPUT)."
@@ -178,9 +214,13 @@
         pkgs:
         lib.mapAttrs (name: script: app pkgs name [ script ]) scripts
         // lib.mapAttrs' (name: script: lib.nameValuePair "py-${name}" (pyApp pkgs name [ script ])) scripts
+        // lib.mapAttrs' (
+          name: script: lib.nameValuePair "rcpp-${name}" (rcppApp pkgs name [ script ])
+        ) scripts
         // {
           all = app pkgs "all" (lib.attrValues scripts);
           py-all = pyApp pkgs "all" (lib.attrValues scripts);
+          rcpp-all = rcppApp pkgs "all" (lib.attrValues scripts);
           versions = {
             type = "app";
             program = "${pkgs.writeShellScript "localfdr-versions" ''
@@ -197,9 +237,10 @@
               set -euo pipefail
               ${unitTests pkgs}
               unit_r
+              unit_rcpp
               unit_python "$@"
             ''}";
-            meta.description = "Run the unit tests of the R and the Python code in the current directory";
+            meta.description = "Run the unit tests of the R, the Rcpp and the Python code in the current directory";
           };
           # `nix run .#help`, `nix run . -- --help` and `nix run .` print the
           # list of commands.
@@ -235,6 +276,16 @@
           cp $TMPDIR/unit-r.txt $out
         '';
 
+        # The unit tests of the Rcpp version (testthat, rcpp/tests/testthat/):
+        # every C++ function of rcpp/src/ against its R function.
+        unit-rcpp = pkgs.runCommand "localfdr-unit-rcpp" { } ''
+          export HOME=$TMPDIR LOCALFDR_RCPP_CACHE=$TMPDIR/compiled
+          ${unitTests pkgs}
+          cd ${self}
+          unit_rcpp | tee $TMPDIR/unit-rcpp.txt
+          cp $TMPDIR/unit-rcpp.txt $out
+        '';
+
         # The unit tests of every function in python/localfdr/ (pytest,
         # python/tests/), with the comparisons with R (marker against_r).
         unit-python = pkgs.runCommand "localfdr-unit-python" { } ''
@@ -266,6 +317,25 @@
                 || { cat $TMPDIR/PYTHON.md; exit 1; }
               bash checks/versions.sh --check
               cp $TMPDIR/PYTHON.md $out
+            '';
+
+        # Build every table and figure with the R and with the Rcpp scripts
+        # and compare the two; the result is the comparison (checks/RCPP.md,
+        # with the stored comparison of the reruns).
+        rcpp =
+          pkgs.runCommand "localfdr-rcpp"
+            {
+              nativeBuildInputs = [
+                (rEnv pkgs)
+                pkgs.python3
+              ];
+            }
+            ''
+              export HOME=$TMPDIR OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 CORES=4
+              cd ${self}
+              bash checks/check_rcpp.sh archive $TMPDIR/work $TMPDIR/RCPP.md $TMPDIR \
+                || { cat $TMPDIR/RCPP.md; exit 1; }
+              cp $TMPDIR/RCPP.md $out
             '';
       });
 
