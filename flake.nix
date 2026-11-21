@@ -17,13 +17,14 @@
 
       # R with the packages the scripts load: ggplot2 draws Figures S1 and S3,
       # openxlsx reads the output files of the original runs
-      # (archive/reduce_archive.R).
+      # (archive/reduce_archive.R), testthat runs the unit tests.
       rEnv =
         pkgs:
         pkgs.rWrapper.override {
           packages = with pkgs.rPackages; [
             ggplot2
             openxlsx
+            testthat
           ];
         };
 
@@ -58,6 +59,57 @@
         program = "${runner pkgs name names}";
         meta.description = "Build ${name} of the paper";
       };
+
+      # The unit tests: testthat over tests/testthat/, started in the current
+      # directory.
+      # PYTHON: the tests of the Python version are added here (a function
+      # unit_python next to unit_r, and its interpreter on PATH).
+      unitTests = pkgs: ''
+        export OPENBLAS_NUM_THREADS=1
+        export PATH=${rEnv pkgs}/bin:$PATH
+        unit_r() { Rscript tests/testthat.R; }
+      '';
+
+      # The text `nix run .#help` prints: every command of the flake.
+      helpText =
+        let
+          row =
+            command: text:
+            "  nix run .#${command}${lib.fixedWidthString (12 - builtins.stringLength command) " " ""}${text}";
+          rows = lib.mapAttrsToList (name: script: row name "scripts/${script}.R") scripts;
+        in
+        lib.concatStringsSep "\n" (
+          [
+            "BayesLocalFDR: code of Gauran, Park, Rattsev, Peterson, Kann, Park (2022), Ann. Appl. Stat. 16(3):1459-1475"
+            ""
+            "One command per table and figure of the paper (R):"
+          ]
+          ++ rows
+          ++ [
+            (row "all" "every table and figure")
+            ""
+            # PYTHON: the commands of the Python version are listed here.
+            "Other commands:"
+            (row "test" "unit tests of R/ in the current directory")
+            (row "versions" "print the software versions")
+            (row "help" "print this list (also: nix run . -- --help)")
+            "  nix flake check       build every output, compare it with the paper, run the unit tests"
+            "  nix develop           a shell with the same R and Python"
+            ""
+            "Results are written to results/ and figures/ of the current directory (or of LOCALFDR_OUTPUT)."
+            "Every table and figure command takes the options listed in the header of its script, after --."
+            "The simulation studies (table1, table2, figS1, figS3) read the archived runs unless --rerun is"
+            "given, for example"
+            "  nix run .#table1 -- --rerun --runs=1:10 --cores=4"
+          ]
+        );
+      help = pkgs: {
+        type = "app";
+        program = "${pkgs.writeShellScript "localfdr-help" ''
+          printf '%b\n' "${helpText}"
+        ''}";
+        meta.description = "List every command";
+      };
     in
     {
       devShells = forEachSystem (pkgs: {
@@ -84,6 +136,20 @@
             ''}";
             meta.description = "Print the software versions";
           };
+          test = {
+            type = "app";
+            program = "${pkgs.writeShellScript "localfdr-test" ''
+              set -euo pipefail
+              ${unitTests pkgs}
+              unit_r
+              # PYTHON: unit_python "$@" is added here.
+            ''}";
+            meta.description = "Run the unit tests of the R code in the current directory";
+          };
+          # `nix run .#help`, `nix run . -- --help` and `nix run .` print the
+          # list of commands.
+          help = help pkgs;
+          default = help pkgs;
         }
       );
 
@@ -106,6 +172,18 @@
               bash checks/versions.sh --check
               cp $TMPDIR/RESULTS.md $out
             '';
+
+        # The unit tests of every function in R/ (testthat, tests/testthat/).
+        unit-r = pkgs.runCommand "localfdr-unit-r" { } ''
+          export HOME=$TMPDIR
+          ${unitTests pkgs}
+          cd ${self}
+          unit_r | tee $TMPDIR/unit-r.txt
+          cp $TMPDIR/unit-r.txt $out
+        '';
+
+        # PYTHON: the checks of the Python version (its unit tests and the
+        # comparison of its outputs with those of R) are added here.
       });
 
       formatter = forEachSystem (pkgs: pkgs.nixfmt-rfc-style);

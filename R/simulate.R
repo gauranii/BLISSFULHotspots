@@ -194,6 +194,8 @@ item_settings <- function(item) {
 bayes_replication <- function(setting, model, gamma, d, settings) {
   run <- SIMULATION_RUNS[[setting$run]]
   data <- simulated_data(setting, run$bayes_seed + d)
+  # No second seed: as in the original runs the sampler continues the stream
+  # that simulated_data() has just seeded, so seed + d fixes the data and the chain.
   fit <- bayes_local_fdr(data$x, model, gamma, sampler_settings(run$lambda_init, run$theta_init),
                          draws = settings$sim_draws, burn = settings$sim_burn,
                          version = run$version)

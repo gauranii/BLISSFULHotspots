@@ -14,7 +14,17 @@
 #          the original runs).
 # -----------------------------------------------------------------------------
 
-REPO_ROOT <- normalizePath(file.path(dirname(sys.frame(1)$ofile), ".."))
+#' File being read by `source()`.
+#'
+#' @return The path given to the innermost running `source()` call.
+sourced_file <- function() {
+  for (frame in rev(sys.frames())) {
+    if (!is.null(frame$ofile)) return(frame$ofile)
+  }
+  stop("R/setup.R must be loaded with source()")
+}
+
+REPO_ROOT <- normalizePath(file.path(dirname(sourced_file()), ".."))
 
 for (file in c("distributions.R", "bayes_fdr.R", "eb_fdr.R", "simulate.R", "real_data.R",
                "plots.R")) {

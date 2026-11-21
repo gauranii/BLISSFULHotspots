@@ -23,12 +23,12 @@ PROCEDURES <- c(NP = "Bayesian - NP", GP = "Bayesian - P", SP = "Bayesian - SP",
 #' @param frequency Named vector of frequencies (`count_frequencies()`).
 #' @param file Path of the PDF to write.
 #' @param size Width and height in inches.
-#' @return NULL, invisibly.
+#' @return The plotted frequencies, invisibly.
 frequency_barplot <- function(frequency, file, size) {
   pdf(file, width = size, height = size)
   on.exit(dev.off())
   barplot(frequency)
-  invisible(NULL)
+  invisible(frequency)
 }
 
 #' Bar plot of a simulated data set: null counts in gray, non-null counts in
@@ -58,7 +58,7 @@ mixture_barplot <- function(null, alt, file, size) {
 #'   the legend).
 #' @param file Path of the PDF to write.
 #' @param size Width and height in inches.
-#' @return NULL, invisibly.
+#' @return The plot (a ggplot object), invisibly.
 rate_plot <- function(values, measure, file, size) {
   library(ggplot2)
   values$Procedure <- PROCEDURES[values$method]
@@ -78,7 +78,7 @@ rate_plot <- function(values, measure, file, size) {
   pdf(file, width = size, height = size)
   on.exit(dev.off())
   print(plot)
-  invisible(NULL)
+  invisible(plot)
 }
 
 #' Shaded table of FDR values by N, lambda, method and theta (Figure S3).
@@ -89,7 +89,7 @@ rate_plot <- function(values, measure, file, size) {
 #' @param fdr Data frame with N, lambda, theta, method and FDR.
 #' @param methods Methods in the order of the columns.
 #' @param file Path of the PDF to write.
-#' @return NULL, invisibly.
+#' @return The plot (a ggplot object), invisibly.
 fdr_table_plot <- function(fdr, methods, file) {
   library(ggplot2)
   fdr$column <- factor(paste(fdr$method, fdr$theta), levels = paste(
@@ -111,7 +111,7 @@ fdr_table_plot <- function(fdr, methods, file) {
   pdf(file, width = 14, height = 6.5)
   on.exit(dev.off())
   print(plot)
-  invisible(NULL)
+  invisible(plot)
 }
 
 # ----- Names of the figure files -----
