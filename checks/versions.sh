@@ -4,12 +4,13 @@
 # Paper:   Gauran, Park, Rattsev, Peterson, Kann, Park (2022). Ann. Appl. Stat.
 #          16(3):1459-1475.
 # Purpose: Print the versions of the software the flake provides: the nixpkgs
-#          revision of flake.lock, R and its packages, and Python (used by the
-#          checks, standard library only).
+#          revision of flake.lock, Python and its packages, R and its
+#          packages, and the OpenBLAS library both use.
 # Usage:   bash checks/versions.sh            print the versions
 #          bash checks/versions.sh --check    compare them with the section
 #                                             "Software versions" of README.md
-#          Run from the repository root, inside `nix develop`.
+#          Run from the repository root, inside `nix develop` (LOCALFDR_BLAS
+#          names the BLAS library; flake.nix sets it).
 # Outputs: prints the versions; with --check exit status 1 if README.md differs.
 # -----------------------------------------------------------------------------
 set -euo pipefail
@@ -17,12 +18,15 @@ set -euo pipefail
 versions() {
   python3 - <<'PY'
 import json
+from importlib.metadata import version
 import platform
 
 locked = json.load(open("flake.lock"))["nodes"]["nixpkgs"]["locked"]
 print(f"nixpkgs  {locked['owner']}/{locked['repo']} {locked['rev']}")
 print()
 print(f"Python   {platform.python_version()}")
+for name in ["numpy", "pandas", "matplotlib", "numba", "pytest"]:  # pyEnv of flake.nix
+    print(f"  {name:12} {version(name)}")
 PY
   echo
   Rscript -e '
@@ -31,6 +35,8 @@ PY
     installed <- installed[is.na(installed[, "Priority"]) | installed[, "Priority"] != "base", ]
     installed <- installed[order(tolower(rownames(installed))), ]
     cat(sprintf("  %-12s %s\n", rownames(installed), installed[, "Version"]), sep = "")'
+  echo
+  echo "OpenBLAS $(echo "$LOCALFDR_BLAS" | sed -E 's|.*-openblas-([0-9.]+)/.*|\1|')"
 }
 
 if [ "${1:-}" = --check ]; then

@@ -1,6 +1,6 @@
 # BayesLocalFDR: Bayesian local false discovery rate for sparse count data
 
-R code for
+Code for
 
 > Gauran, I. I. M., Park, J., Rattsev, I., Peterson, T. A., Kann, M. G., and
 > Park, D. (2022). Bayesian local false discovery rate for sparse count data
@@ -19,6 +19,11 @@ the paper compares it with. Each table and figure of the paper that comes
 from code has one script in `scripts/`, and `nix flake check` builds all of
 them and compares them with the paper. Figure 2 of the paper is a picture of
 a protein structure and has no code.
+
+The code exists twice, in R (`R/`, `scripts/`) and in Python (`python/`).
+The Python version is a second implementation that gives the same numbers as
+R: the same random draws, the same Gibbs chains, every csv cell equal and
+every figure equal mark by mark (`checks/PYTHON.md`). R is the reference.
 
 ```r
 source("R/setup.R")
@@ -41,10 +46,14 @@ eb_rejections(x, level = 0.05)                      # the empirical Bayes count
 | `R/real_data.R` | Reader of the protein domain files and the analysis of a domain (Table 3) |
 | `R/plots.R` | Bar plots, line plots and the shaded table |
 | `scripts/` | One script per table or figure |
+| `python/localfdr/` | The Python version of `R/`, one module per R file, with `rng.py` (R's random number generators), `rmath.py` and `rbase.py` (R's arithmetic, and BLAS and LAPACK through R's own library) |
+| `python/scripts/` | The Python version of each script, same options and output files |
+| `tests/`, `python/tests/` | Unit tests of every R function (testthat) and every Python function (pytest) |
 | `archive/` | Summaries of the original simulation runs that the scripts read (`simulation_summaries.csv`), the tables behind the published Figures S1 and S3 (`figS1_plot_input.csv`, `figS3_full_format.csv`), the published figure files (`figures/`, named as the figures the scripts draw), and `reduce_archive.R`, which made all of these from the run folders |
 | `data/domains/` | Mutation counts of the six protein domains |
-| `checks/` | The numbers printed in the paper (`paper_values.csv`), the comparison scripts and their result (`RESULTS.md`), `check_equivalence.R`, which compares the functions of `R/` with the original code, and `versions.sh`, which prints the software versions |
-| `flake.nix`, `flake.lock` | Pinned environment (R with ggplot2 and openxlsx, Python for the checks), one command per output, and the checks |
+| `checks/` | The numbers printed in the paper (`paper_values.csv`), the comparison scripts and their result (`RESULTS.md`), `check_equivalence.R`, which compares the functions of `R/` with the original code, and `versions.sh`, which prints the software versions; `check_python.sh`, which runs every R and Python script and compares their outputs (`PYTHON.md`) |
+| `.github/workflows/ci.yml` | Runs `nix flake check` on every push and pull request |
+| `flake.nix`, `flake.lock` | Pinned environment (R and Python with their packages), one command per output in each language, the unit tests and the checks |
 
 ## Running
 
@@ -53,8 +62,11 @@ With [Nix](https://nixos.org) (flakes enabled), from the repository root:
 ```sh
 nix run .#table3        # one output: table1 to table3, fig1, figS1 to figS3
 nix run .#all           # every output
-nix flake check         # build every output and compare it with the paper
+nix flake check         # build everything, compare with the paper and R with Python, run the tests
+nix run .#py-table3     # the same output from the Python code (py-all for every one)
+nix run .#test          # unit tests of the R and the Python code
 nix run .#versions      # print the software versions
+nix run .#help          # every command (also: nix run . -- --help)
 ```
 
 Tables are written to `results/` (csv) and figures to `figures/` (pdf), each
@@ -126,6 +138,21 @@ analysis of Table 3 uses the sampler version of 2018 (`SAMPLER_VERSIONS` in
 and the functions of `R/` on the same cases and compares their results. On a
 different machine or R build, recomputed results can differ.
 
+## Tests
+
+Every function in `R/` has a unit test (`tests/testthat/test-<file>.R`, 68
+functions) and every function of `python/localfdr/` has one
+(`python/tests/test_<module>.py`), on small inputs with a known answer: a
+density that sums to one, a sampler's mean over many draws, a short chain that
+gives the same draws twice under one seed. The Python tests marked `against_r`
+also compare random streams, densities and whole Gibbs chains with R, draw by
+draw. `nix run .#test` runs both suites; `nix flake check` runs them with the
+output checks, and GitHub runs `nix flake check` on every push.
+
+Each simulated data set and each chain is seeded where it is drawn (seed plus
+replication number in the simulation studies, 1234 for each domain and model
+in Table 3), so a script gives the same output run alone or after another.
+
 ## Data
 
 - **Protein domain mutation counts** (`data/domains/<domain>.txt`): six
@@ -156,6 +183,11 @@ compares this section with its output.
 nixpkgs  NixOS/nixpkgs f3aa7d3d72c2bc66e0f30f4262d7ec2e33c9eab2
 
 Python   3.14.7
+  numpy        2.5.2
+  pandas       3.0.4
+  matplotlib   3.11.1
+  numba        0.67.0
+  pytest       9.1.1
 
 R        4.6.1
   boot         1.3-32
@@ -212,4 +244,6 @@ R        4.6.1
   waldo        0.6.2
   withr        3.0.3
   zip          3.0.0
+
+OpenBLAS 0.3.33
 ```

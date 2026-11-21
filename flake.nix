@@ -28,6 +28,28 @@
           ];
         };
 
+      # Python with the packages of python/localfdr; numba compiles the random
+      # number generator and the loops that follow R's order of operations.
+      pyEnv =
+        pkgs:
+        pkgs.python3.withPackages (
+          ps: with ps; [
+            numpy
+            pandas
+            matplotlib
+            numba
+            pytest
+          ]
+        );
+
+      # The BLAS and LAPACK library R is linked to; python/localfdr/rbase.py
+      # calls it for its matrix products and decompositions. R is built on
+      # pkgs.blas, whose provider is OpenBLAS with 32-bit integers on every
+      # system; pkgs.openblas itself has 64-bit integers on x86_64, another
+      # library with another calling convention.
+      blasLibrary =
+        pkgs: "${pkgs.blas.provider}/lib/libopenblas${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
+
       # One command per table and figure of the paper.
       scripts = {
         table1 = "table1_simulation";
@@ -60,14 +82,35 @@
         meta.description = "Build ${name} of the paper";
       };
 
-      # The unit tests: testthat over tests/testthat/, started in the current
-      # directory.
-      # PYTHON: the tests of the Python version are added here (a function
-      # unit_python next to unit_r, and its interpreter on PATH).
+      # The same commands with the Python scripts, as py-<name>.
+      pyRunner =
+        pkgs: name: names:
+        pkgs.writeShellScript "localfdr-py-${name}" ''
+          set -euo pipefail
+          export LOCALFDR_OUTPUT="''${LOCALFDR_OUTPUT:-$PWD}"
+          export OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
+          export LOCALFDR_BLAS=${blasLibrary pkgs}
+          cd ${self}
+          for script in ${lib.concatStringsSep " " names}; do
+            ${pyEnv pkgs}/bin/python "python/scripts/$script.py" "$@"
+          done
+        '';
+      pyApp = pkgs: name: names: {
+        type = "app";
+        program = "${pyRunner pkgs name names}";
+        meta.description = "Build ${name} of the paper with the Python scripts";
+      };
+
+      # The unit tests: testthat over tests/testthat/ and pytest over
+      # python/tests/, started in the current directory. The Python tests
+      # marked against_r run R and compare with it, so R is on the PATH too.
       unitTests = pkgs: ''
-        export OPENBLAS_NUM_THREADS=1
-        export PATH=${rEnv pkgs}/bin:$PATH
+        export OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
+        export LOCALFDR_BLAS=${blasLibrary pkgs}
+        export PYTHONDONTWRITEBYTECODE=1
+        export PATH=${rEnv pkgs}/bin:${pyEnv pkgs}/bin:$PATH
         unit_r() { Rscript tests/testthat.R; }
+        unit_python() { python -m pytest -p no:cacheprovider python/tests "$@"; }
       '';
 
       # The text `nix run .#help` prints: every command of the flake.
@@ -77,6 +120,7 @@
             command: text:
             "  nix run .#${command}${lib.fixedWidthString (12 - builtins.stringLength command) " " ""}${text}";
           rows = lib.mapAttrsToList (name: script: row name "scripts/${script}.R") scripts;
+          pyRows = lib.mapAttrsToList (name: script: row "py-${name}" "python/scripts/${script}.py") scripts;
         in
         lib.concatStringsSep "\n" (
           [
@@ -88,12 +132,17 @@
           ++ [
             (row "all" "every table and figure")
             ""
-            # PYTHON: the commands of the Python version are listed here.
+            "The same outputs with the Python scripts:"
+          ]
+          ++ pyRows
+          ++ [
+            (row "py-all" "every table and figure")
+            ""
             "Other commands:"
-            (row "test" "unit tests of R/ in the current directory")
+            (row "test" "unit tests of R/ and python/localfdr/ in the current directory")
             (row "versions" "print the software versions")
             (row "help" "print this list (also: nix run . -- --help)")
-            "  nix flake check       build every output, compare it with the paper, run the unit tests"
+            "  nix flake check       build every output, compare it with the paper and R with Python, run the unit tests"
             "  nix develop           a shell with the same R and Python"
             ""
             "Results are written to results/ and figures/ of the current directory (or of LOCALFDR_OUTPUT)."
@@ -101,6 +150,7 @@
             "The simulation studies (table1, table2, figS1, figS3) read the archived runs unless --rerun is"
             "given, for example"
             "  nix run .#table1 -- --rerun --runs=1:10 --cores=4"
+            "The test command passes its arguments to pytest, for example: nix run .#test -- -k rng"
           ]
         );
       help = pkgs: {
@@ -116,21 +166,26 @@
         default = pkgs.mkShell {
           packages = [
             (rEnv pkgs)
-            pkgs.python3
+            (pyEnv pkgs)
           ];
           OPENBLAS_NUM_THREADS = 1;
+          VECLIB_MAXIMUM_THREADS = 1;
+          LOCALFDR_BLAS = blasLibrary pkgs;
         };
       });
 
       apps = forEachSystem (
         pkgs:
         lib.mapAttrs (name: script: app pkgs name [ script ]) scripts
+        // lib.mapAttrs' (name: script: lib.nameValuePair "py-${name}" (pyApp pkgs name [ script ])) scripts
         // {
           all = app pkgs "all" (lib.attrValues scripts);
+          py-all = pyApp pkgs "all" (lib.attrValues scripts);
           versions = {
             type = "app";
             program = "${pkgs.writeShellScript "localfdr-versions" ''
-              export PATH=${rEnv pkgs}/bin:${pkgs.python3}/bin:$PATH
+              export PATH=${rEnv pkgs}/bin:${pyEnv pkgs}/bin:$PATH
+              export LOCALFDR_BLAS=${blasLibrary pkgs}
               cd ${self}
               exec bash checks/versions.sh "$@"
             ''}";
@@ -142,9 +197,9 @@
               set -euo pipefail
               ${unitTests pkgs}
               unit_r
-              # PYTHON: unit_python "$@" is added here.
+              unit_python "$@"
             ''}";
-            meta.description = "Run the unit tests of the R code in the current directory";
+            meta.description = "Run the unit tests of the R and the Python code in the current directory";
           };
           # `nix run .#help`, `nix run . -- --help` and `nix run .` print the
           # list of commands.
@@ -155,7 +210,6 @@
 
       # Build every table and figure with the default settings and compare
       # each with the paper; the result is the comparison (checks/RESULTS.md).
-      # Also compare the software versions with those listed in README.md.
       checks = forEachSystem (pkgs: {
         outputs =
           pkgs.runCommand "localfdr-outputs"
@@ -169,7 +223,6 @@
               export HOME=$TMPDIR LOCALFDR_OUTPUT=$TMPDIR OPENBLAS_NUM_THREADS=1
               cd ${self}
               bash checks/run_checks.sh $TMPDIR/RESULTS.md || { cat $TMPDIR/RESULTS.md; exit 1; }
-              bash checks/versions.sh --check
               cp $TMPDIR/RESULTS.md $out
             '';
 
@@ -182,8 +235,38 @@
           cp $TMPDIR/unit-r.txt $out
         '';
 
-        # PYTHON: the checks of the Python version (its unit tests and the
-        # comparison of its outputs with those of R) are added here.
+        # The unit tests of every function in python/localfdr/ (pytest,
+        # python/tests/), with the comparisons with R (marker against_r).
+        unit-python = pkgs.runCommand "localfdr-unit-python" { } ''
+          export HOME=$TMPDIR NUMBA_CACHE_DIR=$TMPDIR
+          ${unitTests pkgs}
+          cd ${self}
+          unit_python | tee $TMPDIR/unit-python.txt
+          cp $TMPDIR/unit-python.txt $out
+        '';
+
+        # Build every table and figure with the R and with the Python
+        # scripts and compare the two; the result is the comparison
+        # (checks/PYTHON.md, with the stored comparison of the reruns). Also
+        # compare the software versions with those listed in README.md.
+        python =
+          pkgs.runCommand "localfdr-python"
+            {
+              nativeBuildInputs = [
+                (rEnv pkgs)
+                (pyEnv pkgs)
+              ];
+              LOCALFDR_BLAS = blasLibrary pkgs;
+            }
+            ''
+              export HOME=$TMPDIR NUMBA_CACHE_DIR=$TMPDIR PYTHONDONTWRITEBYTECODE=1
+              export OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 CORES=4
+              cd ${self}
+              bash checks/check_python.sh archive $TMPDIR/work $TMPDIR/PYTHON.md $TMPDIR \
+                || { cat $TMPDIR/PYTHON.md; exit 1; }
+              bash checks/versions.sh --check
+              cp $TMPDIR/PYTHON.md $out
+            '';
       });
 
       formatter = forEachSystem (pkgs: pkgs.nixfmt-rfc-style);
