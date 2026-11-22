@@ -1,4 +1,4 @@
-# BayesLocalFDR: Bayesian local false discovery rate for sparse count data
+# BayesCountFDR: Bayesian local false discovery rate for sparse count data
 
 Code for
 
