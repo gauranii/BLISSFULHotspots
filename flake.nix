@@ -154,7 +154,7 @@
         in
         lib.concatStringsSep "\n" (
           [
-            "BayesCountFDR: code of Gauran, Park, Rattsev, Peterson, Kann, Park (2022), Ann. Appl. Stat. 16(3):1459-1475"
+            "BLISSFULHotspots: code of Gauran, Park, Rattsev, Peterson, Kann, Park (2022), Ann. Appl. Stat. 16(3):1459-1475"
             ""
             "One command per table and figure of the paper (R):"
           ]

@@ -1,4 +1,4 @@
-# BayesCountFDR: Bayesian local false discovery rate for sparse count data
+# BLISSFULHotspots: Bayesian Local fdr In Sparse Settings For Uncovering Landscapes of Hotspots
 
 Code for
 
