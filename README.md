@@ -230,7 +230,9 @@ in Table 3), so a script gives the same output run alone or after another.
 - **Protein domain mutation counts** (`data/domains/<domain>.txt`): six
   domains, cd00054 (90 positions), cd00083 (93), cd00590 (175), smart00179
   (182), smart00209 (188) and cd00063 (193), from the Domain Mapping of
-  Disease Mutations database (DMDM). The first line of a file holds the
+  Disease Mutations database (DMDM, <http://bioinf.umbc.edu/DMDM/>, the link
+  the paper gives; Peterson et al. 2010, *Bioinformatics* 26(19):2458-2459).
+  The first line of a file holds the
   number of positions N; every further line is `position:count:mutations`
   for positions 0 to N, where position 0 holds no mutation. `read_domain()`
   returns the counts of positions 1 to N. Used by Table 3 and Figure 1.
