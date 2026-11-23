@@ -56,7 +56,7 @@ eb_rejections(x, level = 0.05)                      # the empirical Bayes count
 | `tests/`, `python/tests/`, `rcpp/tests/` | Unit tests of every R function (testthat), every Python function (pytest) and every C++ function (testthat, against its R function) |
 | `archive/` | Summaries of the original simulation runs that the scripts read (`simulation_summaries.csv`), the tables behind the published Figures S1 and S3 (`figS1_plot_input.csv`, `figS3_full_format.csv`), the published figure files (`figures/`, named as the figures the scripts draw), and `reduce_archive.R`, which made all of these from the run folders |
 | `data/domains/` | Mutation counts of the six protein domains |
-| `checks/` | The numbers printed in the paper (`paper_values.csv`), the comparison scripts and their result (`RESULTS.md`), `check_equivalence.R`, which compares the functions of `R/` with the original code, and `versions.sh`, which prints the software versions; `check_python.sh`, which runs every R and Python script and compares their outputs (`PYTHON.md`); `check_rcpp.sh`, which does the same for the R and Rcpp scripts (`RCPP.md`) |
+| `checks/` | The numbers printed in the paper (`paper_values.csv`), the comparison scripts and their result (`RESULTS.md`), `check_equivalence.R`, which compares the functions of `R/` with the original code, and `versions.sh`, which prints the software versions; `check_python.sh`, which runs every R and Python script and compares their outputs (`PYTHON.md`); `check_rcpp.sh`, which does the same for the R and Rcpp scripts (`RCPP.md`); `benchmark.sh` and `write_benchmark.R`, which time R against Rcpp on the same seeded work (`BENCHMARK.md`) |
 | `.github/workflows/ci.yml` | Runs `nix flake check` on every push and pull request |
 | `flake.nix`, `flake.lock` | Pinned environment (R and Python with their packages, Rcpp and a C++ compiler), one command per output in each version, the unit tests and the checks |
 
@@ -185,6 +185,28 @@ replications of every setting take 100 s and 10 s for Table 1 and 119 s and
 7 s for Table 2. Compiling the C++ files takes about 8 s, once; the
 compiled files are kept in the temporary folder of the machine (or in the
 folder named by `LOCALFDR_RCPP_CACHE`).
+
+## Why Rcpp
+
+The R code is the reference, but it is slow: the full simulation runs of the
+paper take about a day on 8 cores. The Rcpp version runs the same seeded work
+9 to 17 times faster and gives the same output files, byte for byte
+(`checks/BENCHMARK.md`; 8 core Apple M2, medians of 5 runs):
+
+| Work | R | Rcpp | Speedup |
+|---|---|---|---|
+| One Gibbs chain (cd00063, NP, 11000 iterations), 1 core | 5.8 s | 0.35 s | 16.6x |
+| Table 3 (18 chains), 2 cores | 57 s | 4.5 s | 12.7x |
+| Table 1, one replication of every setting, 2 cores | 53 s | 5.3 s | 10.0x |
+| Tables 1 and 2, Figures S1 and S3, 1000 replications, 8 cores (estimate) | 29 h | 2.7 h | 10.7x |
+
+To rerun it (about 45 minutes):
+
+```sh
+nix develop
+bash checks/benchmark.sh /tmp/benchmark
+Rscript checks/write_benchmark.R /tmp/benchmark "<machine>" > checks/BENCHMARK.md
+```
 
 ## Tests
 
